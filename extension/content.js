@@ -118,11 +118,39 @@ function parseAriaLabel(label) {
   if (withSender) {
     return { sender: withSender[1].trim(), text: withSender[2].trim() };
   }
+  // Mensagens só de anexo (foto/figurinha) não têm ":", ex: "Você enviou uma
+  // foto" ou "Fulano enviou uma foto". Sem isso, uma foto enviada por você
+  // mesmo não seria reconhecida como própria (sender ficaria null) e a ponte
+  // ecoaria ela de volta pro Chatwoot como se fosse do cliente.
+  if (/^voc[eê]\b/i.test(rest)) {
+    return { sender: 'Você', text: rest.trim() };
+  }
   return { sender: null, text: rest.trim() };
 }
 
 function isOutgoingSender(sender) {
   return !!sender && /^voc[eê]$/i.test(sender);
+}
+
+// Extrai representações em texto de conteúdo não-textual da mensagem (fotos
+// e cards de Marketplace), pra pelo menos o link/contexto chegar ao Chatwoot
+// — não baixamos/re-hospedamos a mídia, só referenciamos a URL original.
+function extractAttachmentText(row) {
+  const parts = [];
+
+  row.querySelectorAll('a[href*="/messenger_media/"] img').forEach((img) => {
+    if (img.src) parts.push(`[Foto] ${img.src}`);
+  });
+
+  row.querySelectorAll('a[href*="/marketplace/item/"]').forEach((link) => {
+    const label = (link.textContent || '')
+      .replace(/Ver comprador/gi, '')
+      .replace(/Mais opções/gi, '')
+      .trim();
+    parts.push(`[Marketplace] ${label} - ${link.href}`);
+  });
+
+  return parts;
 }
 
 function reportIncomingMessage(threadId, senderName, text) {
@@ -150,13 +178,16 @@ function scanForNewMessages() {
   const rows = document.querySelectorAll(SELECTORS.messageRow);
   rows.forEach((row) => {
     const parsed = parseAriaLabel(row.getAttribute('aria-label') || '');
-    if (!parsed.text || isOutgoingSender(parsed.sender)) return;
+    if (isOutgoingSender(parsed.sender)) return;
+
+    const text = [parsed.text, ...extractAttachmentText(row)].filter(Boolean).join('\n');
+    if (!text) return;
 
     const signature = messageSignature(threadId, row);
     if (seenMessages.has(signature)) return;
     seenMessages.add(signature);
 
-    reportIncomingMessage(threadId, parsed.sender, parsed.text);
+    reportIncomingMessage(threadId, parsed.sender, text);
   });
 }
 
