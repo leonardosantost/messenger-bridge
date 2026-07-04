@@ -291,7 +291,19 @@ async function sendMessageToThread(threadId, text) {
   box.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', bubbles: true }));
 }
 
-const observer = new MutationObserver(() => scanForNewMessages());
+// O card fixo do item do Marketplace parece carregar um pouco depois do
+// resto da conversa (provavelmente busca preço/título numa chamada separada).
+// Sem esperar, a primeira mensagem podia ser processada e marcada como
+// "vista" antes do card aparecer, ficando sem o contexto do item pra sempre.
+// Por isso, em vez de escanear a cada mutação do DOM, aguardamos uma pausa de
+// 800ms sem mudanças antes de escanear — dá tempo da página se estabilizar.
+let scanTimer = null;
+function scheduleScan() {
+  clearTimeout(scanTimer);
+  scanTimer = setTimeout(scanForNewMessages, 800);
+}
+
+const observer = new MutationObserver(() => scheduleScan());
 observer.observe(document.body, { childList: true, subtree: true });
 scanForNewMessages();
 
