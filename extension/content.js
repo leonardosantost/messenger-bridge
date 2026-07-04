@@ -3,11 +3,15 @@
 // ser ajustados inspecionando o DOM ao vivo (DevTools > Elements) na sua conta.
 // Prefira sempre atributos estáveis (role, aria-label) a classes.
 const SELECTORS = {
-  // O Messenger usa [role="row"] tanto na lista de conversas (sidebar) quanto
-  // nas mensagens da conversa aberta. Por isso escopamos a busca de mensagens
-  // a um contêiner específico do painel principal (mainPane), não ao
-  // documento inteiro — senão capturamos as prévias da sidebar por engano.
-  mainPane: '[role="main"]',
+  // Confirmado inspecionando o DOM real: a lista de conversas fica dentro
+  // deste landmark (role="navigation", aria-label="Lista de tópicos"). O
+  // Messenger usa [role="row"] tanto ali quanto nas mensagens da conversa
+  // aberta, então excluímos qualquer [role="row"] que esteja dentro desse
+  // container ao procurar mensagens de verdade.
+  // ATENÇÃO: aria-label é traduzido — se o Messenger estiver em outro idioma,
+  // ajuste esse texto (ex: "Chats" em inglês).
+  sidebarNav: '[aria-label="Lista de tópicos"]',
+  unreadMarkerText: 'Mensagem não lida',
   messageRow: '[role="row"]',
   composeBox: '[role="textbox"][contenteditable="true"]',
   threadListLink: 'a[href*="/t/"]',
@@ -54,14 +58,11 @@ function scanForNewMessages() {
   const threadId = currentThreadId();
   if (!threadId) return;
 
-  const mainPane = document.querySelector(SELECTORS.mainPane);
-  if (!mainPane) {
-    console.warn('[messenger-bridge] SELECTORS.mainPane não encontrou nada nesta página — ajuste o seletor');
-    return;
-  }
-
-  const rows = mainPane.querySelectorAll(SELECTORS.messageRow);
+  const sidebar = document.querySelector(SELECTORS.sidebarNav);
+  const rows = document.querySelectorAll(SELECTORS.messageRow);
   rows.forEach((row) => {
+    if (sidebar && sidebar.contains(row)) return; // ignora prévias da lista de conversas
+
     const text = extractText(row);
     if (!text || isOutgoing(row)) return;
 
@@ -71,6 +72,26 @@ function scanForNewMessages() {
 
     reportIncomingMessage(threadId, text);
   });
+}
+
+// Varre a lista de conversas por itens marcados como "não lidos" e abre o
+// primeiro que não seja a conversa já aberta — assim a extensão navega
+// sozinha entre conversas com mensagem nova, sem precisar de clique manual.
+function openNextUnreadThread() {
+  const sidebar = document.querySelector(SELECTORS.sidebarNav);
+  if (!sidebar) return;
+
+  const rows = Array.from(sidebar.querySelectorAll(SELECTORS.messageRow));
+  const unreadRow = rows.find((row) => row.textContent?.includes(SELECTORS.unreadMarkerText));
+  if (!unreadRow) return;
+
+  const link = unreadRow.querySelector(SELECTORS.threadListLink);
+  const href = link?.getAttribute('href') || '';
+  const threadId = getThreadIdFromUrl(href);
+  if (!threadId || threadId === currentThreadId()) return;
+
+  console.log('[messenger-bridge] abrindo conversa não lida automaticamente:', threadId);
+  link.click();
 }
 
 function findThreadLink(threadId) {
@@ -129,3 +150,7 @@ chrome.runtime.onMessage.addListener((message) => {
 const observer = new MutationObserver(() => scanForNewMessages());
 observer.observe(document.body, { childList: true, subtree: true });
 scanForNewMessages();
+
+// A cada 5s, se houver conversa não lida diferente da aberta, abre ela.
+// Isso permite capturar mensagens de qualquer conversa sem intervenção manual.
+setInterval(openNextUnreadThread, 5000);
