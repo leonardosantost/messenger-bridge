@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { config } from './config';
-import { getThreadMapping, saveThreadMapping, ThreadMapping } from './db';
+import { deleteThreadMapping, getThreadMapping, saveThreadMapping, ThreadMapping } from './db';
 
 const publicApi = axios.create({
   baseURL: `${config.chatwootBaseUrl}/public/api/v1/inboxes/${config.chatwootInboxIdentifier}`,
@@ -65,14 +65,28 @@ async function ensureMapping(message: IncomingMessage): Promise<ThreadMapping> {
   }
 }
 
+async function postMessage(mapping: ThreadMapping, message: IncomingMessage): Promise<void> {
+  await publicApi.post(`/contacts/${mapping.contactIdentifier}/conversations/${mapping.conversationId}/messages`, {
+    content: message.text,
+    echo_id: `${message.threadId}-${Date.now()}`,
+  });
+}
+
 export async function sendIncomingMessageToChatwoot(message: IncomingMessage): Promise<void> {
+  const mapping = await ensureMapping(message);
   try {
-    const mapping = await ensureMapping(message);
-    await publicApi.post(
-      `/contacts/${mapping.contactIdentifier}/conversations/${mapping.conversationId}/messages`,
-      { content: message.text, echo_id: `${message.threadId}-${Date.now()}` }
-    );
+    await postMessage(mapping, message);
   } catch (err) {
+    if (axios.isAxiosError(err) && err.response?.status === 404) {
+      // O contato/conversa mapeado foi apagado no Chatwoot (ex: limpeza manual
+      // de teste). Descarta o mapeamento morto e recria do zero, uma vez, em
+      // vez de exigir que alguém apague a linha no banco na mão toda vez.
+      console.warn(`[chatwoot] mapeamento da thread ${message.threadId} não existe mais no Chatwoot, recriando...`);
+      deleteThreadMapping(message.threadId);
+      const freshMapping = await ensureMapping(message);
+      await postMessage(freshMapping, message);
+      return;
+    }
     if (axios.isAxiosError(err)) {
       console.error('[chatwoot] erro na API:', err.response?.status, JSON.stringify(err.response?.data));
     }

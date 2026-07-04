@@ -55,3 +55,7 @@ export function saveThreadMapping(mapping: ThreadMapping): void {
        conversation_id = excluded.conversation_id`
   ).run(mapping);
 }
+
+export function deleteThreadMapping(threadId: string): void {
+  db.prepare('DELETE FROM threads WHERE thread_id = ?').run(threadId);
+}
