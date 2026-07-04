@@ -1,7 +1,21 @@
 const WS_ALARM = 'ws-keepalive';
 
 let socket = null;
+let authenticated = false;
 let settings = { serverUrl: '', token: '' };
+
+// O service worker MV3 é descartado por inatividade e perde todo o estado em
+// memória (inclusive o WebSocket). Quando o content script manda uma
+// mensagem recebida enquanto isso acontece, guardamos aqui e reenviamos assim
+// que a reconexão autenticar — sem isso a mensagem era perdida em silêncio,
+// só chegando (se chegasse) no próximo alarme de reconexão, até 1min depois.
+const pendingIncoming = [];
+
+function flushPendingIncoming() {
+  while (pendingIncoming.length > 0 && authenticated && socket?.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify(pendingIncoming.shift()));
+  }
+}
 
 async function loadSettings() {
   const stored = await chrome.storage.sync.get(['serverUrl', 'token']);
@@ -12,6 +26,7 @@ function connect() {
   if (!settings.serverUrl || !settings.token) return;
   if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
 
+  authenticated = false;
   socket = new WebSocket(settings.serverUrl);
 
   socket.onopen = () => {
@@ -23,6 +38,12 @@ function connect() {
     try {
       data = JSON.parse(event.data);
     } catch {
+      return;
+    }
+
+    if (data.type === 'auth_ok') {
+      authenticated = true;
+      flushPendingIncoming();
       return;
     }
 
@@ -38,6 +59,7 @@ function connect() {
 
   socket.onclose = () => {
     socket = null;
+    authenticated = false;
   };
   socket.onerror = () => {
     socket?.close();
@@ -69,8 +91,13 @@ chrome.storage.onChanged.addListener(async (_changes, area) => {
 });
 
 chrome.runtime.onMessage.addListener((message) => {
-  if (message.type === 'incoming_message' && socket && socket.readyState === WebSocket.OPEN) {
+  if (message.type !== 'incoming_message') return;
+
+  if (authenticated && socket?.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify(message));
+  } else {
+    pendingIncoming.push(message);
+    loadSettings().then(connect); // reconecta na hora, não espera o alarme de 1min
   }
 });
 
