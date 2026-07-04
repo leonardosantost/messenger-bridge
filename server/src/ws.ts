@@ -5,13 +5,33 @@ import { sendIncomingMessageToChatwoot } from './chatwoot';
 
 let extensionSocket: WebSocket | null = null;
 
+type SendMessageCommand = { type: 'send_message'; threadId: string; text: string };
+
 type IncomingFromExtension =
   | { type: 'auth'; token: string }
   | { type: 'incoming_message'; threadId: string; senderId: string; senderName: string; text: string };
 
-export function sendToExtension(command: { type: 'send_message'; threadId: string; text: string }): boolean {
+// A extensão (MV3) tem o service worker derrubado por inatividade e só
+// reconecta periodicamente (alarme de ~1min, mínimo permitido pelo Chrome).
+// Se um comando chegar nesse intervalo, guardamos aqui e reenviamos assim
+// que ela autenticar de novo — sem isso, respostas do agente eram perdidas
+// silenciosamente quando a extensão estava momentaneamente desconectada.
+const pendingCommands: SendMessageCommand[] = [];
+
+function flushPendingCommands(): void {
+  while (pendingCommands.length > 0 && extensionSocket?.readyState === WebSocket.OPEN) {
+    const command = pendingCommands.shift()!;
+    extensionSocket.send(JSON.stringify(command));
+    console.log(`[ws] comando pendente entregue para a extensão (thread ${command.threadId})`);
+  }
+}
+
+export function sendToExtension(command: SendMessageCommand): boolean {
   if (!extensionSocket || extensionSocket.readyState !== WebSocket.OPEN) {
-    console.warn(`[ws] extensão não conectada, não foi possível enviar comando para thread ${command.threadId}`);
+    pendingCommands.push(command);
+    console.warn(
+      `[ws] extensão não conectada, comando enfileirado para thread ${command.threadId} (${pendingCommands.length} pendente(s))`
+    );
     return false;
   }
   extensionSocket.send(JSON.stringify(command));
@@ -40,6 +60,7 @@ export function attachWebSocketServer(httpServer: Server): void {
           extensionSocket = socket;
           socket.send(JSON.stringify({ type: 'auth_ok' }));
           console.log('[ws] extensão autenticada e conectada');
+          flushPendingCommands();
         } else {
           console.warn('[ws] tentativa de conexão com token inválido');
           socket.close(4001, 'unauthorized');
