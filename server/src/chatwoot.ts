@@ -15,13 +15,18 @@ interface IncomingMessage {
   avatarUrl?: string | null;
 }
 
+function formatContactName(senderName: string, itemContext?: string | null): string {
+  const name = itemContext ? `${senderName} - ${itemContext}` : senderName;
+  return name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+}
+
 async function createContact(
   senderId: string,
   senderName: string,
   itemContext?: string | null,
   avatarUrl?: string | null
 ): Promise<string> {
-  const name = itemContext ? `${senderName} — ${itemContext}` : senderName;
+  const name = formatContactName(senderName, itemContext);
   const { data } = await publicApi.post('/contacts', {
     identifier: senderId,
     name,

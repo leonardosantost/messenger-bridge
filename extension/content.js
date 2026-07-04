@@ -3,12 +3,10 @@
 // ser ajustados inspecionando o DOM ao vivo (DevTools > Elements) na sua conta.
 // Prefira sempre atributos estáveis (role, aria-label) a classes.
 const SELECTORS = {
-  // Confirmado inspecionando o DOM real de uma mensagem aberta: cada bolha de
-  // mensagem tem data-scope="messages_table" e aria-roledescription="mensagem"
-  // — bem mais estável que role="row" (que a lista lateral de conversas
-  // também usa, causando falsos positivos antes). O aria-label da mensagem
-  // já vem no formato "Às HH:MM, Nome: conteúdo".
-  messageRow: '[data-scope="messages_table"]',
+  // Confirmado inspecionando o DOM real de uma mensagem aberta: cada bolha real
+  // tem data-scope="messages_table" + aria-roledescription="mensagem". Usar só
+  // data-scope pega containers auxiliares e mistura nome, status e botões.
+  messageRow: '[data-scope="messages_table"][aria-roledescription="mensagem"]',
   // Lista lateral de conversas (aria-label é traduzido — ajuste se o
   // Messenger estiver em outro idioma, ex: "Chats" em inglês).
   sidebarNav: '[aria-label="Lista de tópicos"]',
@@ -124,6 +122,11 @@ function messageSignature(threadId, row) {
 // remetente. Anexos/figurinhas não têm ":" após o nome; nesse caso retorna
 // sender null (usamos um fallback).
 function parseAriaLabel(label) {
+  const actionLabel = label.match(/^Pressione Enter,\s*Mensagem enviada\s+.+?\s+por\s+([^:]+)(?::\s*([\s\S]*))?$/i);
+  if (actionLabel) {
+    return { sender: actionLabel[1].trim(), text: (actionLabel[2] || '').trim() };
+  }
+
   const afterTime = label.match(/^Às\s+[^,]+,\s*([\s\S]*)$/);
   const rest = afterTime ? afterTime[1] : label;
   const withSender = rest.match(/^([^:]+):\s*([\s\S]*)$/);
@@ -168,8 +171,23 @@ function getMarketplaceItemContext() {
   const label = (link.textContent || '')
     .replace(/Ver comprador/gi, '')
     .replace(/Mais opções/gi, '')
+    .replace(/^Marketplace/i, '')
+    .replace(/^R\$\s*[\d.,]+\s*[—-]\s*/i, '')
     .trim();
   return label || null;
+}
+
+function getMarketplaceAvatarUrl() {
+  const link = Array.from(document.querySelectorAll('a[href*="/marketplace/item/"]')).find(
+    (a) => !a.closest(SELECTORS.messageRow)
+  );
+  if (!link) return null;
+
+  const img = link.querySelector('img[src]');
+  if (img?.src) return img.src;
+
+  const svgImage = link.querySelector('image');
+  return svgImage?.getAttribute('href') || svgImage?.getAttribute('xlink:href') || null;
 }
 
 // Foto do cabeçalho da conversa (fora da sidebar e das mensagens). No caso de
@@ -209,7 +227,7 @@ function scanForNewMessages() {
   if (!threadId) return;
 
   const itemContext = getMarketplaceItemContext();
-  const avatarUrl = getConversationAvatarUrl();
+  const avatarUrl = getMarketplaceAvatarUrl() || getConversationAvatarUrl();
   const rows = document.querySelectorAll(SELECTORS.messageRow);
   rows.forEach((row) => {
     const signature = messageSignature(threadId, row);
@@ -230,6 +248,7 @@ function scanForNewMessages() {
     // Aviso automático do Messenger/Marketplace ("Fulano iniciou esta
     // conversa."), não foi digitado pelo cliente.
     if (/iniciou esta conversa/i.test(parsed.text)) return;
+    if (parsed.sender && parsed.text.toLowerCase() === parsed.sender.toLowerCase()) return;
 
     const text = [parsed.text, ...extractAttachmentText(row)].filter(Boolean).join('\n');
     if (!text) return;
