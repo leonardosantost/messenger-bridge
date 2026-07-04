@@ -3,6 +3,11 @@
 // ser ajustados inspecionando o DOM ao vivo (DevTools > Elements) na sua conta.
 // Prefira sempre atributos estáveis (role, aria-label) a classes.
 const SELECTORS = {
+  // O Messenger usa [role="row"] tanto na lista de conversas (sidebar) quanto
+  // nas mensagens da conversa aberta. Por isso escopamos a busca de mensagens
+  // a um contêiner específico do painel principal (mainPane), não ao
+  // documento inteiro — senão capturamos as prévias da sidebar por engano.
+  mainPane: '[role="main"]',
   messageRow: '[role="row"]',
   composeBox: '[role="textbox"][contenteditable="true"]',
   threadListLink: 'a[href*="/t/"]',
@@ -35,6 +40,7 @@ function extractText(row) {
 }
 
 function reportIncomingMessage(threadId, text) {
+  console.log('[messenger-bridge] mensagem recebida detectada:', threadId, text);
   chrome.runtime.sendMessage({
     type: 'incoming_message',
     threadId,
@@ -48,7 +54,13 @@ function scanForNewMessages() {
   const threadId = currentThreadId();
   if (!threadId) return;
 
-  const rows = document.querySelectorAll(SELECTORS.messageRow);
+  const mainPane = document.querySelector(SELECTORS.mainPane);
+  if (!mainPane) {
+    console.warn('[messenger-bridge] SELECTORS.mainPane não encontrou nada nesta página — ajuste o seletor');
+    return;
+  }
+
+  const rows = mainPane.querySelectorAll(SELECTORS.messageRow);
   rows.forEach((row) => {
     const text = extractText(row);
     if (!text || isOutgoing(row)) return;
@@ -86,6 +98,7 @@ async function ensureOnThread(threadId) {
 }
 
 async function sendMessageToThread(threadId, text) {
+  console.log('[messenger-bridge] comando send_message recebido:', threadId, text);
   const onThread = await ensureOnThread(threadId);
   if (!onThread) {
     console.error('[messenger-bridge] não foi possível abrir a thread', threadId);
@@ -94,7 +107,7 @@ async function sendMessageToThread(threadId, text) {
 
   const box = document.querySelector(SELECTORS.composeBox);
   if (!box) {
-    console.error('[messenger-bridge] caixa de mensagem não encontrada');
+    console.error('[messenger-bridge] caixa de mensagem não encontrada — ajuste SELECTORS.composeBox');
     return;
   }
 
