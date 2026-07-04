@@ -27,25 +27,16 @@ git push -u origin main
 No EasyPanel: **Project → + Service → App**.
 
 **Use o método de build via Dockerfile** (não o fluxo padrão de "Install
-Script" + processo supervisor). Testamos o fluxo de Install Script neste
-projeto e ele se mostrou inconsistente: nesta instância do EasyPanel, o
-`/code` visto pelo *processo em execução* (e pelo Console) é a raiz inteira
-do repositório (monorepo, com `server/` e `extension/` como subpastas — sem
-`package.json` na raiz), mas o script de instalação parece rodar num
-contexto diferente que "enxerga" `server/` como raiz. Isso causa erros do
-tipo `ENOENT ... /code/package.json` mesmo com o install script funcionando.
-Usar Dockerfile elimina essa ambiguidade: o build inteiro roda dentro da
-definição do próprio Dockerfile, sem depender de nenhuma convenção de
-diretório do painel.
+Script" + processo supervisor) — evita a ambiguidade de diretório que
+causava `ENOENT ... /code/package.json` no fluxo de buildpack.
 
-- **Source**: GitHub repository → selecione `messenger-bridge`.
-- **Build**: método = **Dockerfile**.
-  - **Dockerfile Path**: `server/Dockerfile`
-  - **Build Context**: raiz do repositório (padrão) — o Dockerfile já foi
-    escrito assumindo isso (`COPY server/package*.json`, `COPY server/src`
-    etc.). Se seu painel expuser um campo separado de "Build Path"/"Context"
-    e você preferir apontá-lo para `server`, aí edite o Dockerfile removendo
-    o prefixo `server/` dos `COPY` (comentário já deixado no arquivo).
+- **Source**: GitHub repository → selecione `messenger-bridge`, com o
+  **Source Path** apontando para `server` (é esse path que vira o contexto
+  de build).
+- **Build**: método = **Dockerfile**, **Dockerfile Path**: `Dockerfile`
+  (relativo ao Source Path acima, ou seja `server/Dockerfile` visto da raiz
+  do repo). O contexto de build é a própria pasta `server/` — o Dockerfile
+  já assume isso (`COPY package*.json`, `COPY src`, sem prefixo).
 - **Environment** (aba *Environment*), cole o conteúdo de `server/.env.example`
   preenchido:
   ```

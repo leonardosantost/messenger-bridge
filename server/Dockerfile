@@ -8,14 +8,13 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 
-# Build context = raiz do repositório (monorepo); por isso os caminhos abaixo
-# começam com "server/". Se seu builder usar "server" como contexto (não a
-# raiz do repo), troque para os caminhos sem o prefixo "server/".
-COPY server/package*.json ./
+# Build context = pasta "server/" (é isso que o EasyPanel usa quando o
+# Source Path do serviço está configurado como "server").
+COPY package*.json ./
 RUN npm ci
 
-COPY server/tsconfig.json ./
-COPY server/src ./src
+COPY tsconfig.json ./
+COPY src ./src
 RUN npm run build
 
 ENV NODE_ENV=production
