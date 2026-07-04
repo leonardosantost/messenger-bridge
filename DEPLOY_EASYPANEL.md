@@ -26,65 +26,46 @@ git push -u origin main
 
 No EasyPanel: **Project → + Service → App**.
 
-Esse fluxo usa o modo padrão do EasyPanel (App via Git + script de instalação
-+ processo gerenciado pelo supervisor), em vez de um Dockerfile próprio — é
-o que aparece por padrão ao criar o serviço.
+**Use o método de build via Dockerfile** (não o fluxo padrão de "Install
+Script" + processo supervisor). Testamos o fluxo de Install Script neste
+projeto e ele se mostrou inconsistente: nesta instância do EasyPanel, o
+`/code` visto pelo *processo em execução* (e pelo Console) é a raiz inteira
+do repositório (monorepo, com `server/` e `extension/` como subpastas — sem
+`package.json` na raiz), mas o script de instalação parece rodar num
+contexto diferente que "enxerga" `server/` como raiz. Isso causa erros do
+tipo `ENOENT ... /code/package.json` mesmo com o install script funcionando.
+Usar Dockerfile elimina essa ambiguidade: o build inteiro roda dentro da
+definição do próprio Dockerfile, sem depender de nenhuma convenção de
+diretório do painel.
 
 - **Source**: GitHub repository → selecione `messenger-bridge`.
-  - Nosso repo é um monorepo (`server/` + `extension/`, sem `package.json` na
-    raiz). No campo de subdiretório/path da aba *Source* (às vezes chamado de
-    "Build Path" ou "Root Directory"), aponte para `server` — isso faz o
-    EasyPanel copiar só o conteúdo de `server/` para `/code` dentro do
-    container.
-- **Install Script**: substitua o script padrão por:
-  ```
-  cd /code && npm install && npm run build && supervisorctl restart nodejs-server
-  ```
-  (o padrão só roda `npm install`; nosso backend é TypeScript, então precisa
-  do `npm run build` — que gera `dist/` a partir de `src/` — antes de
-  reiniciar o processo. Use `&&` numa linha só, não quebras de linha soltas:
-  se `npm install` falhar, o script para em vez de tentar `npm run build`
-  sem `node_modules` completo e mascarar o erro real.)
-  - **Importante**: o repo já fixa a versão do Node via `server/.nvmrc`
-    (`20`) e `"engines"` no `package.json`. Isso evita um erro comum: o
-    `better-sqlite3` só tem binário pré-compilado para versões LTS do Node —
-    em Node 24 (o "latest" que o EasyPanel pode usar por padrão) ele cai para
-    compilar via `node-gyp`, que falha com `not found: make` porque a imagem
-    não tem toolchain de compilação (`make`/`g++`/`python3`). Se seu serviço
-    já existia antes desse ajuste, confirme nas configurações do App se há
-    uma opção de "Node version" e force `20`, ou apague e recrie o serviço
-    após atualizar o repo (`git pull`) para o `.nvmrc` ser respeitado.
-- **Processes**: confirme que existe um processo chamado `nodejs-server`,
-  diretório `/code`, comando `npm start` (mapeia para `node dist/index.js`,
-  já definido em `server/package.json`).
+- **Build**: método = **Dockerfile**.
+  - **Dockerfile Path**: `server/Dockerfile`
+  - **Build Context**: raiz do repositório (padrão) — o Dockerfile já foi
+    escrito assumindo isso (`COPY server/package*.json`, `COPY server/src`
+    etc.). Se seu painel expuser um campo separado de "Build Path"/"Context"
+    e você preferir apontá-lo para `server`, aí edite o Dockerfile removendo
+    o prefixo `server/` dos `COPY` (comentário já deixado no arquivo).
 - **Environment** (aba *Environment*), cole o conteúdo de `server/.env.example`
   preenchido:
   ```
   PORT=3000
-  DATA_DIR=/code/data
+  DATA_DIR=/app/data
   EXTENSION_TOKEN=gere-um-valor-aleatorio-forte
   CHATWOOT_WEBHOOK_TOKEN=gere-outro-valor-aleatorio
   CHATWOOT_BASE_URL=https://app.seuchatwoot.com
   CHATWOOT_INBOX_IDENTIFIER=<inbox identifier do inbox tipo API>
   ```
 - **Mounts** (aba *Mounts*): adicione um **Volume**
-  - Mount Path: `/code/data`
-  - (garante que `bridge.sqlite3` sobrevive a redeploys/restarts — sem isso,
-    todo novo deploy recria `/code` do zero e perde o mapeamento de threads)
+  - Mount Path: `/app/data`
+  - (garante que `bridge.sqlite3` sobrevive a redeploys/restarts)
 - **Domains** (aba *Domains*): adicione um domínio (ex: `bridge.seudominio.com`),
   Proxy Port `3000`. O EasyPanel emite HTTPS via Let's Encrypt automaticamente.
   Isso já habilita tanto `https://bridge.seudominio.com/webhook` quanto
   `wss://bridge.seudominio.com/ws/extension` (o upgrade de WebSocket funciona
   transparente atrás do proxy do EasyPanel).
-- Clique em **Deploy**. Acompanhe a aba *Logs*: deve aparecer
-  `messenger-bridge server listening on port 3000`.
-
-> Alternativa: se preferir builds reprodutíveis via Docker em vez do fluxo
-> acima, o repo também tem um `server/Dockerfile` pronto — nesse caso, na
-> aba *Source* troque o método de build para Dockerfile (mesmo apontando o
-> path para `server`) e ignore Install Script/Processes (o `CMD` do
-> Dockerfile já cuida disso). Os dois métodos são equivalentes; use o que já
-> estiver configurado no seu serviço.
+- Clique em **Deploy**. Acompanhe a aba *Logs* do build e depois do container:
+  deve aparecer `messenger-bridge server listening on port 3000`.
 
 ### Configurar o webhook no Chatwoot
 

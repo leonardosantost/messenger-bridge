@@ -8,11 +8,14 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 
-COPY package*.json ./
+# Build context = raiz do repositório (monorepo); por isso os caminhos abaixo
+# começam com "server/". Se seu builder usar "server" como contexto (não a
+# raiz do repo), troque para os caminhos sem o prefixo "server/".
+COPY server/package*.json ./
 RUN npm ci
 
-COPY tsconfig.json ./
-COPY src ./src
+COPY server/tsconfig.json ./
+COPY server/src ./src
 RUN npm run build
 
 ENV NODE_ENV=production
