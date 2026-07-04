@@ -3,16 +3,17 @@
 // ser ajustados inspecionando o DOM ao vivo (DevTools > Elements) na sua conta.
 // Prefira sempre atributos estáveis (role, aria-label) a classes.
 const SELECTORS = {
-  // Confirmado inspecionando o DOM real: a lista de conversas fica dentro
-  // deste landmark (role="navigation", aria-label="Lista de tópicos"). O
-  // Messenger usa [role="row"] tanto ali quanto nas mensagens da conversa
-  // aberta, então excluímos qualquer [role="row"] que esteja dentro desse
-  // container ao procurar mensagens de verdade.
-  // ATENÇÃO: aria-label é traduzido — se o Messenger estiver em outro idioma,
-  // ajuste esse texto (ex: "Chats" em inglês).
+  // Confirmado inspecionando o DOM real de uma mensagem aberta: cada bolha de
+  // mensagem tem data-scope="messages_table" e aria-roledescription="mensagem"
+  // — bem mais estável que role="row" (que a lista lateral de conversas
+  // também usa, causando falsos positivos antes). O aria-label da mensagem
+  // já vem no formato "Às HH:MM, Nome: conteúdo".
+  messageRow: '[data-scope="messages_table"]',
+  // Lista lateral de conversas (aria-label é traduzido — ajuste se o
+  // Messenger estiver em outro idioma, ex: "Chats" em inglês).
   sidebarNav: '[aria-label="Lista de tópicos"]',
+  sidebarRow: '[role="row"]',
   unreadMarkerText: 'Mensagem não lida',
-  messageRow: '[role="row"]',
   composeBox: '[role="textbox"][contenteditable="true"]',
   threadListLink: 'a[href*="/t/"]',
 };
@@ -29,27 +30,34 @@ function currentThreadId() {
 }
 
 function messageSignature(threadId, row) {
-  return `${threadId}:${row.textContent?.slice(0, 200)}`;
+  const messageId = row.getAttribute('data-message-id');
+  return messageId ? `${threadId}:${messageId}` : `${threadId}:${row.textContent?.slice(0, 200)}`;
 }
 
-function isOutgoing(row) {
-  // Heurística: bolhas próprias geralmente ficam alinhadas à direita e/ou têm
-  // aria-label começando com "You sent". Ajuste conforme o que você observar.
-  const label = row.getAttribute('aria-label') || '';
-  return /^you sent/i.test(label);
+// aria-label vem como "Às 17:58, Fulano: conteúdo" (mensagens com texto) ou
+// só "Às 17:58, Fulano enviou uma figurinha" (anexos, sem ":"). Extrai o que
+// der; se não achar remetente, retorna sender null (usamos um fallback).
+function parseAriaLabel(label) {
+  const afterTime = label.match(/^Às\s+[\d:]+,\s*([\s\S]*)$/);
+  const rest = afterTime ? afterTime[1] : label;
+  const withSender = rest.match(/^([^:]+):\s*([\s\S]*)$/);
+  if (withSender) {
+    return { sender: withSender[1].trim(), text: withSender[2].trim() };
+  }
+  return { sender: null, text: rest.trim() };
 }
 
-function extractText(row) {
-  return row.textContent?.trim() ?? '';
+function isOutgoingSender(sender) {
+  return !!sender && /^voc[eê]$/i.test(sender);
 }
 
-function reportIncomingMessage(threadId, text) {
-  console.log('[messenger-bridge] mensagem recebida detectada:', threadId, text);
+function reportIncomingMessage(threadId, senderName, text) {
+  console.log('[messenger-bridge] mensagem recebida detectada:', threadId, senderName, text);
   chrome.runtime.sendMessage({
     type: 'incoming_message',
     threadId,
     senderId: threadId,
-    senderName: document.title || 'Messenger',
+    senderName: senderName || document.title || 'Messenger',
     text,
   });
 }
@@ -58,19 +66,16 @@ function scanForNewMessages() {
   const threadId = currentThreadId();
   if (!threadId) return;
 
-  const sidebar = document.querySelector(SELECTORS.sidebarNav);
   const rows = document.querySelectorAll(SELECTORS.messageRow);
   rows.forEach((row) => {
-    if (sidebar && sidebar.contains(row)) return; // ignora prévias da lista de conversas
-
-    const text = extractText(row);
-    if (!text || isOutgoing(row)) return;
+    const parsed = parseAriaLabel(row.getAttribute('aria-label') || '');
+    if (!parsed.text || isOutgoingSender(parsed.sender)) return;
 
     const signature = messageSignature(threadId, row);
     if (seenMessages.has(signature)) return;
     seenMessages.add(signature);
 
-    reportIncomingMessage(threadId, text);
+    reportIncomingMessage(threadId, parsed.sender, parsed.text);
   });
 }
 
@@ -81,7 +86,7 @@ function openNextUnreadThread() {
   const sidebar = document.querySelector(SELECTORS.sidebarNav);
   if (!sidebar) return;
 
-  const rows = Array.from(sidebar.querySelectorAll(SELECTORS.messageRow));
+  const rows = Array.from(sidebar.querySelectorAll(SELECTORS.sidebarRow));
   const unreadRow = rows.find((row) => row.textContent?.includes(SELECTORS.unreadMarkerText));
   if (!unreadRow) return;
 
