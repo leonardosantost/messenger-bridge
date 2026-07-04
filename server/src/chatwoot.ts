@@ -11,12 +11,14 @@ interface IncomingMessage {
   senderId: string;
   senderName: string;
   text: string;
+  itemContext?: string | null;
 }
 
-async function createContact(senderId: string, senderName: string): Promise<string> {
+async function createContact(senderId: string, senderName: string, itemContext?: string | null): Promise<string> {
+  const name = itemContext ? `${senderName} — ${itemContext}` : senderName;
   const { data } = await publicApi.post('/contacts', {
     identifier: senderId,
-    name: senderName,
+    name,
   });
   return data.source_id as string;
 }
@@ -31,7 +33,7 @@ async function ensureMapping(message: IncomingMessage): Promise<ThreadMapping> {
   if (existing) return existing;
 
   console.log(`[chatwoot] criando contato/conversa novos para a thread ${message.threadId} (${message.senderName})`);
-  const contactIdentifier = await createContact(message.senderId, message.senderName);
+  const contactIdentifier = await createContact(message.senderId, message.senderName, message.itemContext);
   const conversationId = await createConversation(contactIdentifier);
   const mapping: ThreadMapping = {
     threadId: message.threadId,

@@ -132,35 +132,43 @@ function isOutgoingSender(sender) {
   return !!sender && /^voc[eê]$/i.test(sender);
 }
 
-// Extrai representações em texto de conteúdo não-textual da mensagem (fotos
-// e cards de Marketplace), pra pelo menos o link/contexto chegar ao Chatwoot
-// — não baixamos/re-hospedamos a mídia, só referenciamos a URL original.
+// Extrai representações em texto de anexos de dentro de uma mensagem (fotos),
+// pra pelo menos o link chegar ao Chatwoot — não baixamos/re-hospedamos a
+// mídia, só referenciamos a URL original.
 function extractAttachmentText(row) {
   const parts = [];
-
   row.querySelectorAll('a[href*="/messenger_media/"] img').forEach((img) => {
     if (img.src) parts.push(`[Foto] ${img.src}`);
   });
-
-  row.querySelectorAll('a[href*="/marketplace/item/"]').forEach((link) => {
-    const label = (link.textContent || '')
-      .replace(/Ver comprador/gi, '')
-      .replace(/Mais opções/gi, '')
-      .trim();
-    parts.push(`[Marketplace] ${label} - ${link.href}`);
-  });
-
   return parts;
 }
 
-function reportIncomingMessage(threadId, senderName, text) {
-  console.log('[messenger-bridge] mensagem recebida detectada:', threadId, senderName, text);
+// O card de item do Marketplace (quando a conversa vem de um anúncio) não é
+// uma mensagem — é um cabeçalho fixo acima da lista de mensagens, o mesmo
+// para toda a conversa. Por isso é extraído separado do loop de mensagens,
+// buscando fora de qualquer linha de mensagem (SELECTORS.messageRow).
+function getMarketplaceItemContext() {
+  const link = Array.from(document.querySelectorAll('a[href*="/marketplace/item/"]')).find(
+    (a) => !a.closest(SELECTORS.messageRow)
+  );
+  if (!link) return null;
+
+  const label = (link.textContent || '')
+    .replace(/Ver comprador/gi, '')
+    .replace(/Mais opções/gi, '')
+    .trim();
+  return label || null;
+}
+
+function reportIncomingMessage(threadId, senderName, text, itemContext) {
+  console.log('[messenger-bridge] mensagem recebida detectada:', threadId, senderName, text, itemContext);
   const message = {
     type: 'incoming_message',
     threadId,
     senderId: threadId,
     senderName: senderName || document.title || 'Messenger',
     text,
+    itemContext: itemContext || null,
   };
 
   if (authenticated && socket?.readyState === WebSocket.OPEN) {
@@ -175,6 +183,7 @@ function scanForNewMessages() {
   const threadId = currentThreadId();
   if (!threadId) return;
 
+  const itemContext = getMarketplaceItemContext();
   const rows = document.querySelectorAll(SELECTORS.messageRow);
   rows.forEach((row) => {
     const parsed = parseAriaLabel(row.getAttribute('aria-label') || '');
@@ -187,7 +196,7 @@ function scanForNewMessages() {
     if (seenMessages.has(signature)) return;
     seenMessages.add(signature);
 
-    reportIncomingMessage(threadId, parsed.sender, text);
+    reportIncomingMessage(threadId, parsed.sender, text, itemContext);
   });
 }
 

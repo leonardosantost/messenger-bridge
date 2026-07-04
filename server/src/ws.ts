@@ -9,7 +9,14 @@ type SendMessageCommand = { type: 'send_message'; threadId: string; text: string
 
 type IncomingFromExtension =
   | { type: 'auth'; token: string }
-  | { type: 'incoming_message'; threadId: string; senderId: string; senderName: string; text: string };
+  | {
+      type: 'incoming_message';
+      threadId: string;
+      senderId: string;
+      senderName: string;
+      text: string;
+      itemContext?: string | null;
+    };
 
 // A extensão (MV3) tem o service worker derrubado por inatividade e só
 // reconecta periodicamente (alarme de ~1min, mínimo permitido pelo Chrome).
@@ -76,6 +83,7 @@ export function attachWebSocketServer(httpServer: Server): void {
             senderId: payload.senderId,
             senderName: payload.senderName,
             text: payload.text,
+            itemContext: payload.itemContext,
           });
           console.log(`[ws] mensagem da thread ${payload.threadId} encaminhada ao Chatwoot com sucesso`);
         } catch (err) {
