@@ -26,23 +26,43 @@ git push -u origin main
 
 No EasyPanel: **Project → + Service → App**.
 
+Esse fluxo usa o modo padrão do EasyPanel (App via Git + script de instalação
++ processo gerenciado pelo supervisor), em vez de um Dockerfile próprio — é
+o que aparece por padrão ao criar o serviço.
+
 - **Source**: GitHub repository → selecione `messenger-bridge`.
-- **Build**: o EasyPanel detecta o `server/Dockerfile` automaticamente se você
-  apontar o **Build Path / Context** para `server` (campo de subdiretório na
-  aba *Source* — o Dockerfile já está em `server/Dockerfile`).
+  - Nosso repo é um monorepo (`server/` + `extension/`, sem `package.json` na
+    raiz). No campo de subdiretório/path da aba *Source* (às vezes chamado de
+    "Build Path" ou "Root Directory"), aponte para `server` — isso faz o
+    EasyPanel copiar só o conteúdo de `server/` para `/code` dentro do
+    container.
+- **Install Script**: substitua o script padrão por:
+  ```
+  cd /code
+  npm install
+  npm run build
+  supervisorctl restart nodejs-server
+  ```
+  (o padrão só roda `npm install`; nosso backend é TypeScript, então precisa
+  do `npm run build` — que gera `dist/` a partir de `src/` — antes de
+  reiniciar o processo.)
+- **Processes**: confirme que existe um processo chamado `nodejs-server`,
+  diretório `/code`, comando `npm start` (mapeia para `node dist/index.js`,
+  já definido em `server/package.json`).
 - **Environment** (aba *Environment*), cole o conteúdo de `server/.env.example`
   preenchido:
   ```
   PORT=3000
-  DATA_DIR=/app/data
+  DATA_DIR=/code/data
   EXTENSION_TOKEN=gere-um-valor-aleatorio-forte
   CHATWOOT_WEBHOOK_TOKEN=gere-outro-valor-aleatorio
   CHATWOOT_BASE_URL=https://app.seuchatwoot.com
   CHATWOOT_INBOX_IDENTIFIER=<inbox identifier do inbox tipo API>
   ```
 - **Mounts** (aba *Mounts*): adicione um **Volume**
-  - Mount Path: `/app/data`
-  - (garante que `bridge.sqlite3` sobrevive a redeploys/restarts)
+  - Mount Path: `/code/data`
+  - (garante que `bridge.sqlite3` sobrevive a redeploys/restarts — sem isso,
+    todo novo deploy recria `/code` do zero e perde o mapeamento de threads)
 - **Domains** (aba *Domains*): adicione um domínio (ex: `bridge.seudominio.com`),
   Proxy Port `3000`. O EasyPanel emite HTTPS via Let's Encrypt automaticamente.
   Isso já habilita tanto `https://bridge.seudominio.com/webhook` quanto
@@ -50,6 +70,13 @@ No EasyPanel: **Project → + Service → App**.
   transparente atrás do proxy do EasyPanel).
 - Clique em **Deploy**. Acompanhe a aba *Logs*: deve aparecer
   `messenger-bridge server listening on port 3000`.
+
+> Alternativa: se preferir builds reprodutíveis via Docker em vez do fluxo
+> acima, o repo também tem um `server/Dockerfile` pronto — nesse caso, na
+> aba *Source* troque o método de build para Dockerfile (mesmo apontando o
+> path para `server`) e ignore Install Script/Processes (o `CMD` do
+> Dockerfile já cuida disso). Os dois métodos são equivalentes; use o que já
+> estiver configurado no seu serviço.
 
 ### Configurar o webhook no Chatwoot
 
