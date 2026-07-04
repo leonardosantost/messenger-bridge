@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <title>Chatwoot Messenger Bridge</title>
+    <style>
+      body { font-family: system-ui, sans-serif; width: 280px; padding: 12px; }
+      label { display: block; font-size: 12px; margin-top: 8px; }
+      input { width: 100%; box-sizing: border-box; padding: 6px; margin-top: 2px; }
+      button { margin-top: 12px; width: 100%; padding: 8px; }
+      #status { margin-top: 8px; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <label for="serverUrl">URL do WebSocket do servidor</label>
+    <input id="serverUrl" placeholder="wss://sua-vps.com/ws/extension" />
+
+    <label for="token">Token da extensão</label>
+    <input id="token" placeholder="EXTENSION_TOKEN" />
+
+    <button id="save">Salvar</button>
+    <div id="status"></div>
+
+    <script src="options.js"></script>
+  </body>
+</html>

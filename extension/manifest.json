@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Chatwoot Messenger Bridge",
+  "version": "1.0.0",
+  "description": "Encaminha mensagens do Messenger pessoal para um inbox do Chatwoot via um serviço backend próprio.",
+  "permissions": ["storage", "alarms"],
+  "host_permissions": ["https://www.messenger.com/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.messenger.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "options.html",
+    "default_title": "Chatwoot Messenger Bridge"
+  }
+}
