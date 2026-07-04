@@ -38,14 +38,22 @@ o que aparece por padrão ao criar o serviço.
     container.
 - **Install Script**: substitua o script padrão por:
   ```
-  cd /code
-  npm install
-  npm run build
-  supervisorctl restart nodejs-server
+  cd /code && npm install && npm run build && supervisorctl restart nodejs-server
   ```
   (o padrão só roda `npm install`; nosso backend é TypeScript, então precisa
   do `npm run build` — que gera `dist/` a partir de `src/` — antes de
-  reiniciar o processo.)
+  reiniciar o processo. Use `&&` numa linha só, não quebras de linha soltas:
+  se `npm install` falhar, o script para em vez de tentar `npm run build`
+  sem `node_modules` completo e mascarar o erro real.)
+  - **Importante**: o repo já fixa a versão do Node via `server/.nvmrc`
+    (`20`) e `"engines"` no `package.json`. Isso evita um erro comum: o
+    `better-sqlite3` só tem binário pré-compilado para versões LTS do Node —
+    em Node 24 (o "latest" que o EasyPanel pode usar por padrão) ele cai para
+    compilar via `node-gyp`, que falha com `not found: make` porque a imagem
+    não tem toolchain de compilação (`make`/`g++`/`python3`). Se seu serviço
+    já existia antes desse ajuste, confirme nas configurações do App se há
+    uma opção de "Node version" e force `20`, ou apague e recrie o serviço
+    após atualizar o repo (`git pull`) para o `.nvmrc` ser respeitado.
 - **Processes**: confirme que existe um processo chamado `nodejs-server`,
   diretório `/code`, comando `npm start` (mapeia para `node dist/index.js`,
   já definido em `server/package.json`).
