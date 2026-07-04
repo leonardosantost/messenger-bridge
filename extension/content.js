@@ -34,11 +34,14 @@ function messageSignature(threadId, row) {
   return messageId ? `${threadId}:${messageId}` : `${threadId}:${row.textContent?.slice(0, 200)}`;
 }
 
-// aria-label vem como "Às 17:58, Fulano: conteúdo" (mensagens com texto) ou
-// só "Às 17:58, Fulano enviou uma figurinha" (anexos, sem ":"). Extrai o que
-// der; se não achar remetente, retorna sender null (usamos um fallback).
+// aria-label vem como "Às 17:58, Fulano: conteúdo" (mensagens recentes) ou
+// "Às 28 de outubro de 2022 23:57, Fulano: conteúdo" (mensagens antigas, com
+// data completa) — por isso o horário é capturado como "tudo até a primeira
+// vírgula", não só dígitos/":", senão o ":" de "23:57" quebra a extração do
+// remetente. Anexos/figurinhas não têm ":" após o nome; nesse caso retorna
+// sender null (usamos um fallback).
 function parseAriaLabel(label) {
-  const afterTime = label.match(/^Às\s+[\d:]+,\s*([\s\S]*)$/);
+  const afterTime = label.match(/^Às\s+[^,]+,\s*([\s\S]*)$/);
   const rest = afterTime ? afterTime[1] : label;
   const withSender = rest.match(/^([^:]+):\s*([\s\S]*)$/);
   if (withSender) {
