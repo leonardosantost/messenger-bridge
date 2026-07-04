@@ -172,7 +172,19 @@ function getMarketplaceItemContext() {
   return label || null;
 }
 
-function reportIncomingMessage(threadId, senderName, text, itemContext) {
+// Foto do cabeçalho da conversa (fora da sidebar e das mensagens). No caso de
+// conversas vindas do Marketplace, o Messenger já mostra a foto do anúncio
+// aqui em vez da foto real do contato (por privacidade) — o que já ajuda a
+// identificar o item só de olhar o avatar no Chatwoot.
+function getConversationAvatarUrl() {
+  const sidebar = document.querySelector(SELECTORS.sidebarNav);
+  const img = Array.from(document.querySelectorAll('[role="img"] img[src]')).find(
+    (el) => !el.closest(SELECTORS.messageRow) && !(sidebar && sidebar.contains(el))
+  );
+  return img?.src || null;
+}
+
+function reportIncomingMessage(threadId, senderName, text, itemContext, avatarUrl) {
   console.log('[messenger-bridge] mensagem recebida detectada:', threadId, senderName, text, itemContext);
   const message = {
     type: 'incoming_message',
@@ -181,6 +193,7 @@ function reportIncomingMessage(threadId, senderName, text, itemContext) {
     senderName: senderName || document.title || 'Messenger',
     text,
     itemContext: itemContext || null,
+    avatarUrl: avatarUrl || null,
   };
 
   if (authenticated && socket?.readyState === WebSocket.OPEN) {
@@ -196,6 +209,7 @@ function scanForNewMessages() {
   if (!threadId) return;
 
   const itemContext = getMarketplaceItemContext();
+  const avatarUrl = getConversationAvatarUrl();
   const rows = document.querySelectorAll(SELECTORS.messageRow);
   rows.forEach((row) => {
     const signature = messageSignature(threadId, row);
@@ -220,7 +234,7 @@ function scanForNewMessages() {
     const text = [parsed.text, ...extractAttachmentText(row)].filter(Boolean).join('\n');
     if (!text) return;
 
-    reportIncomingMessage(threadId, parsed.sender, text, itemContext);
+    reportIncomingMessage(threadId, parsed.sender, text, itemContext, avatarUrl);
   });
 }
 

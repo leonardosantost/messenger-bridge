@@ -16,6 +16,7 @@ type IncomingFromExtension =
       senderName: string;
       text: string;
       itemContext?: string | null;
+      avatarUrl?: string | null;
     };
 
 // A extensão (MV3) tem o service worker derrubado por inatividade e só
@@ -84,6 +85,7 @@ export function attachWebSocketServer(httpServer: Server): void {
             senderName: payload.senderName,
             text: payload.text,
             itemContext: payload.itemContext,
+            avatarUrl: payload.avatarUrl,
           });
           console.log(`[ws] mensagem da thread ${payload.threadId} encaminhada ao Chatwoot com sucesso`);
         } catch (err) {
