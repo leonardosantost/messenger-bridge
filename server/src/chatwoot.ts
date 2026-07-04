@@ -30,6 +30,7 @@ async function ensureMapping(message: IncomingMessage): Promise<ThreadMapping> {
   const existing = getThreadMapping(message.threadId);
   if (existing) return existing;
 
+  console.log(`[chatwoot] criando contato/conversa novos para a thread ${message.threadId} (${message.senderName})`);
   const contactIdentifier = await createContact(message.senderId, message.senderName);
   const conversationId = await createConversation(contactIdentifier);
   const mapping: ThreadMapping = {
@@ -38,13 +39,21 @@ async function ensureMapping(message: IncomingMessage): Promise<ThreadMapping> {
     conversationId,
   };
   saveThreadMapping(mapping);
+  console.log(`[chatwoot] conversation ${conversationId} criada e mapeada para a thread ${message.threadId}`);
   return mapping;
 }
 
 export async function sendIncomingMessageToChatwoot(message: IncomingMessage): Promise<void> {
-  const mapping = await ensureMapping(message);
-  await publicApi.post(
-    `/contacts/${mapping.contactIdentifier}/conversations/${mapping.conversationId}/messages`,
-    { content: message.text, echo_id: `${message.threadId}-${Date.now()}` }
-  );
+  try {
+    const mapping = await ensureMapping(message);
+    await publicApi.post(
+      `/contacts/${mapping.contactIdentifier}/conversations/${mapping.conversationId}/messages`,
+      { content: message.text, echo_id: `${message.threadId}-${Date.now()}` }
+    );
+  } catch (err) {
+    if (axios.isAxiosError(err)) {
+      console.error('[chatwoot] erro na API:', err.response?.status, JSON.stringify(err.response?.data));
+    }
+    throw err;
+  }
 }

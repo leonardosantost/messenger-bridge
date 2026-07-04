@@ -14,15 +14,17 @@ interface ChatwootMessageCreatedPayload {
 }
 
 webhookRouter.post('/webhook', (req, res) => {
+  const payload = req.body as ChatwootMessageCreatedPayload;
+  console.log(`[webhook] recebido: event=${payload.event} message_type=${payload.message_type} private=${payload.private}`);
+
   if (config.chatwootWebhookToken) {
     const token = req.header('X-Webhook-Token');
     if (token !== config.chatwootWebhookToken) {
+      console.warn('[webhook] token inválido, ignorado');
       res.sendStatus(401);
       return;
     }
   }
-
-  const payload = req.body as ChatwootMessageCreatedPayload;
 
   if (payload.event !== 'message_created' || payload.message_type !== 'outgoing' || payload.private) {
     res.sendStatus(204);
@@ -31,6 +33,7 @@ webhookRouter.post('/webhook', (req, res) => {
 
   const mapping = getThreadMappingByConversationId(payload.conversation.id);
   if (!mapping) {
+    console.warn(`[webhook] nenhuma thread do Messenger mapeada para a conversation ${payload.conversation.id}`);
     res.sendStatus(204);
     return;
   }
