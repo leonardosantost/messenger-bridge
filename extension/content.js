@@ -20,6 +20,77 @@ const SELECTORS = {
 
 const seenMessages = new Set();
 
+// A conexão com o servidor roda aqui no content script (não no service worker
+// da extensão) porque o Chrome pode encerrar o service worker do MV3 a
+// qualquer momento, mesmo com um WebSocket aberto — ele não conta como
+// "atividade" que mantém o processo vivo. O content script, por outro lado,
+// vive enquanto essa aba do Messenger estiver aberta, que é exatamente o
+// requisito da ponte (o navegador precisa ficar aberto de qualquer forma).
+let socket = null;
+let authenticated = false;
+let wsSettings = { serverUrl: '', token: '' };
+const pendingIncoming = [];
+
+async function loadWsSettings() {
+  const stored = await chrome.storage.sync.get(['serverUrl', 'token']);
+  wsSettings = { serverUrl: stored.serverUrl || '', token: stored.token || '' };
+}
+
+function flushPendingIncoming() {
+  while (pendingIncoming.length > 0 && authenticated && socket?.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify(pendingIncoming.shift()));
+  }
+}
+
+function connectSocket() {
+  if (!wsSettings.serverUrl || !wsSettings.token) return;
+  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
+
+  authenticated = false;
+  socket = new WebSocket(wsSettings.serverUrl);
+
+  socket.onopen = () => {
+    socket.send(JSON.stringify({ type: 'auth', token: wsSettings.token }));
+  };
+
+  socket.onmessage = (event) => {
+    let data;
+    try {
+      data = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+
+    if (data.type === 'auth_ok') {
+      authenticated = true;
+      console.log('[messenger-bridge] conectado e autenticado no servidor');
+      flushPendingIncoming();
+      return;
+    }
+
+    if (data.type === 'send_message') {
+      sendMessageToThread(data.threadId, data.text);
+    }
+  };
+
+  socket.onclose = () => {
+    socket = null;
+    authenticated = false;
+    setTimeout(connectSocket, 3000);
+  };
+  socket.onerror = () => {
+    socket?.close();
+  };
+}
+
+chrome.storage.onChanged.addListener((_changes, area) => {
+  if (area !== 'sync') return;
+  socket?.close();
+  loadWsSettings().then(connectSocket);
+});
+
+loadWsSettings().then(connectSocket);
+
 function getThreadIdFromUrl(url) {
   const match = url.match(/\/t\/(\d+)/);
   return match ? match[1] : null;
@@ -56,13 +127,20 @@ function isOutgoingSender(sender) {
 
 function reportIncomingMessage(threadId, senderName, text) {
   console.log('[messenger-bridge] mensagem recebida detectada:', threadId, senderName, text);
-  chrome.runtime.sendMessage({
+  const message = {
     type: 'incoming_message',
     threadId,
     senderId: threadId,
     senderName: senderName || document.title || 'Messenger',
     text,
-  });
+  };
+
+  if (authenticated && socket?.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify(message));
+  } else {
+    pendingIncoming.push(message);
+    connectSocket();
+  }
 }
 
 function scanForNewMessages() {
@@ -148,12 +226,6 @@ async function sendMessageToThread(threadId, text) {
   box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
   box.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', bubbles: true }));
 }
-
-chrome.runtime.onMessage.addListener((message) => {
-  if (message.type === 'send_message') {
-    sendMessageToThread(message.threadId, message.text);
-  }
-});
 
 const observer = new MutationObserver(() => scanForNewMessages());
 observer.observe(document.body, { childList: true, subtree: true });
