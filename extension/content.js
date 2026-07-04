@@ -20,6 +20,18 @@ const SELECTORS = {
 
 const seenMessages = new Set();
 
+// Sempre que o content script recarrega (restart do container, atualização da
+// extensão, etc.), a lista de "já vistas" começa vazia — sem isso, todo o
+// histórico ainda visível na tela da conversa aberta seria reportado como
+// "mensagem nova" de uma vez. Nos primeiros segundos após carregar, só
+// marcamos como vistas (sem reportar); depois disso, tudo funciona normal,
+// inclusive conversas novas abertas depois pela navegação automática.
+const STARTUP_AT = Date.now();
+const WARMUP_MS = 10000;
+function isWarmingUp() {
+  return Date.now() - STARTUP_AT < WARMUP_MS;
+}
+
 // A conexão com o servidor roda aqui no content script (não no service worker
 // da extensão) porque o Chrome pode encerrar o service worker do MV3 a
 // qualquer momento, mesmo com um WebSocket aberto — ele não conta como
@@ -186,15 +198,17 @@ function scanForNewMessages() {
   const itemContext = getMarketplaceItemContext();
   const rows = document.querySelectorAll(SELECTORS.messageRow);
   rows.forEach((row) => {
+    const signature = messageSignature(threadId, row);
+    if (seenMessages.has(signature)) return;
+    seenMessages.add(signature);
+
+    if (isWarmingUp()) return; // histórico visto logo na inicialização, não reporta
+
     const parsed = parseAriaLabel(row.getAttribute('aria-label') || '');
     if (isOutgoingSender(parsed.sender)) return;
 
     const text = [parsed.text, ...extractAttachmentText(row)].filter(Boolean).join('\n');
     if (!text) return;
-
-    const signature = messageSignature(threadId, row);
-    if (seenMessages.has(signature)) return;
-    seenMessages.add(signature);
 
     reportIncomingMessage(threadId, parsed.sender, text, itemContext);
   });
