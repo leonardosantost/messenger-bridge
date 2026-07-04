@@ -43,10 +43,17 @@ causava `ENOENT ... /code/package.json` no fluxo de buildpack.
   PORT=3000
   DATA_DIR=/app/data
   EXTENSION_TOKEN=gere-um-valor-aleatorio-forte
-  CHATWOOT_WEBHOOK_TOKEN=gere-outro-valor-aleatorio
   CHATWOOT_BASE_URL=https://app.seuchatwoot.com
   CHATWOOT_INBOX_IDENTIFIER=<inbox identifier do inbox tipo API>
   ```
+  Não defina `CHATWOOT_WEBHOOK_TOKEN` — o webhook nativo do Chatwoot não
+  envia headers customizados, então essa variável só se aplica se você
+  colocar um proxy próprio na frente que injete o header. Deixando vazia, a
+  checagem é pulada automaticamente.
+  - **Use o Inbox Identifier (string), não o ID numérico do inbox.** Ele fica
+    em Settings → Inboxes → (seu inbox) → Configuration → "Inbox Identifier".
+    Se você usar o número que aparece na URL do painel (ex: `.../inbox/7`),
+    a API pública responde 404 em todas as chamadas.
 - **Mounts** (aba *Mounts*): adicione um **Volume**
   - Mount Path: `/app/data`
   - (garante que `bridge.sqlite3` sobrevive a redeploys/restarts)
