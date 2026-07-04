@@ -204,8 +204,18 @@ function scanForNewMessages() {
 
     if (isWarmingUp()) return; // histórico visto logo na inicialização, não reporta
 
+    // Card de "Envie uma resposta rápida" (sugestões pro vendedor tocar) —
+    // não é uma mensagem de ninguém, tem aria-label só com o nome do cliente
+    // (ex: "Às 19:02, Mariana", sem ":"), o que geraria uma "mensagem" cujo
+    // texto é só o nome. Filtra pelo texto do próprio card.
+    if (row.textContent?.includes('Envie uma resposta rápida')) return;
+
     const parsed = parseAriaLabel(row.getAttribute('aria-label') || '');
     if (isOutgoingSender(parsed.sender)) return;
+
+    // Aviso automático do Messenger/Marketplace ("Fulano iniciou esta
+    // conversa."), não foi digitado pelo cliente.
+    if (/iniciou esta conversa/i.test(parsed.text)) return;
 
     const text = [parsed.text, ...extractAttachmentText(row)].filter(Boolean).join('\n');
     if (!text) return;

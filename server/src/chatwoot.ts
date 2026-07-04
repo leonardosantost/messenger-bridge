@@ -28,21 +28,41 @@ async function createConversation(contactIdentifier: string): Promise<number> {
   return data.id as number;
 }
 
+// Várias mensagens da mesma thread nova costumam chegar quase juntas (ex:
+// aviso de sistema + pergunta + card de sugestão do Marketplace). Sem essa
+// trava, duas chamadas concorrentes de ensureMapping viam "sem mapeamento
+// ainda" ao mesmo tempo e cada uma criava seu próprio contato+conversa,
+// duplicando a conversa no Chatwoot. Aqui garantimos que só a primeira
+// chamada por thread realmente cria; as demais reaproveitam a mesma promise.
+const inFlightMappings = new Map<string, Promise<ThreadMapping>>();
+
 async function ensureMapping(message: IncomingMessage): Promise<ThreadMapping> {
   const existing = getThreadMapping(message.threadId);
   if (existing) return existing;
 
-  console.log(`[chatwoot] criando contato/conversa novos para a thread ${message.threadId} (${message.senderName})`);
-  const contactIdentifier = await createContact(message.senderId, message.senderName, message.itemContext);
-  const conversationId = await createConversation(contactIdentifier);
-  const mapping: ThreadMapping = {
-    threadId: message.threadId,
-    contactIdentifier,
-    conversationId,
-  };
-  saveThreadMapping(mapping);
-  console.log(`[chatwoot] conversation ${conversationId} criada e mapeada para a thread ${message.threadId}`);
-  return mapping;
+  const inFlight = inFlightMappings.get(message.threadId);
+  if (inFlight) return inFlight;
+
+  const creation = (async (): Promise<ThreadMapping> => {
+    console.log(`[chatwoot] criando contato/conversa novos para a thread ${message.threadId} (${message.senderName})`);
+    const contactIdentifier = await createContact(message.senderId, message.senderName, message.itemContext);
+    const conversationId = await createConversation(contactIdentifier);
+    const mapping: ThreadMapping = {
+      threadId: message.threadId,
+      contactIdentifier,
+      conversationId,
+    };
+    saveThreadMapping(mapping);
+    console.log(`[chatwoot] conversation ${conversationId} criada e mapeada para a thread ${message.threadId}`);
+    return mapping;
+  })();
+
+  inFlightMappings.set(message.threadId, creation);
+  try {
+    return await creation;
+  } finally {
+    inFlightMappings.delete(message.threadId);
+  }
 }
 
 export async function sendIncomingMessageToChatwoot(message: IncomingMessage): Promise<void> {
